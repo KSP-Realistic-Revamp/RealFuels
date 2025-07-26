@@ -1,10 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Reflection;
-using UnityEngine;
-using KSP;
+﻿using KSP.Localization;
+using ROUtils;
 using SolverEngines;
-using KSP.Localization;
+using System;
+using UnityEngine;
 
 namespace RealFuels
 {
@@ -16,7 +14,7 @@ namespace RealFuels
         double VarianceDuring = 0.2d;
 
         // engine params
-        private FloatCurve atmosphereCurve = null, atmCurve = null, velCurve = null, atmCurveIsp = null, velCurveIsp = null, throttleIspCurve = null, throttleIspCurveAtmStrength = null;
+        private HermiteCurve atmosphereCurve = null, atmCurve = null, velCurve = null, atmCurveIsp = null, velCurveIsp = null, throttleIspCurve = null, throttleIspCurveAtmStrength = null;
         private double minFlow, maxFlow, maxFlowRecip, thrustRatio = 1d, throttleResponseRate, machLimit, machMult;
         private double flowMultMin, flowMultCap, flowMultCapSharpness;
         private bool combusting = true;
@@ -80,13 +78,13 @@ namespace RealFuels
             minFlow = nMinFlow * 1000d; // to kg
             maxFlow = nMaxFlow * 1000d;
             maxFlowRecip = 1d / maxFlow;
-            atmosphereCurve = nAtmosphereCurve;
-            atmCurve = nAtmCurve;
-            velCurve = nVelCurve;
-            atmCurveIsp = nAtmCurveIsp;
-            velCurveIsp = nVelCurveIsp;
-            throttleIspCurve = nthrottleIspCurve;
-            throttleIspCurveAtmStrength = nthrottleIspCurveAtmStrength;
+            atmosphereCurve = nAtmosphereCurve == null ? null : new HermiteCurve(nAtmosphereCurve);
+            atmCurve = nAtmCurve == null ? null : new HermiteCurve(nAtmCurve);
+            velCurve = nVelCurve == null ? null : new HermiteCurve(nVelCurve);
+            atmCurveIsp = nAtmCurveIsp == null ? null : new HermiteCurve(nAtmCurveIsp);
+            velCurveIsp = nVelCurveIsp == null ? null : new HermiteCurve(nVelCurveIsp);
+            throttleIspCurve = nthrottleIspCurve == null ? null : new HermiteCurve(nthrottleIspCurve);
+            throttleIspCurveAtmStrength = nthrottleIspCurveAtmStrength == null ? null : new HermiteCurve(nthrottleIspCurveAtmStrength);
             disableUnderwater = nDisableUnderwater;
             throttleResponseRate = nThrottleResponseRate;
             chamberTemp = 288d;
@@ -110,32 +108,31 @@ namespace RealFuels
             }
 
             seededRandom = new System.Random(nSeed);
-            double vFlow, vIsp, vMR;
-            GetVariances(true, out vFlow, out vMR, out vIsp);
+            GetVariances(true, out double vFlow, out double vMR, out double vIsp);
             baseVaryFlow = VarianceBase * varyFlow * vFlow;
             baseVaryIsp = VarianceBase * varyIsp * vIsp;
             baseVaryMR = VarianceBase * varyMR * vMR;
 
 
             // falloff at > sea level pressure.
-            if (atmosphereCurve.Curve.keys.Length == 2 && atmosphereCurve.Curve.keys[0].value != atmosphereCurve.Curve.keys[1].value)
+            if (atmosphereCurve.KeyCount == 2 && atmosphereCurve[0].value != atmosphereCurve[1].value)
             {
-                Keyframe k0 = atmosphereCurve.Curve.keys[0];
-                Keyframe k1 = atmosphereCurve.Curve.keys[1];
+                HermiteCurve.Key k0 = atmosphereCurve[0];
+                HermiteCurve.Key k1 = atmosphereCurve[1];
                 if (k0.time > k1.time)
                 {
-                    Keyframe t = k0;
+                    HermiteCurve.Key t = k0;
                     k0 = k1;
                     k1 = t;
                 }
-                float minIsp = 0.0001f;
-                float invSlope = (k1.time - k0.time) / (k0.value - k1.value);
-                float maxP = k1.time + (k1.value - minIsp) * invSlope;
+                double minIsp = 0.0001f;
+                double invSlope = (k1.time - k0.time) / (k0.value - k1.value);
+                double maxP = k1.time + (k1.value - minIsp) * invSlope;
 
-                atmosphereCurve = new FloatCurve();
-                atmosphereCurve.Add(k0.time, k0.value, k0.inTangent, k0.outTangent);
-                atmosphereCurve.Add(k1.time, k1.value, k1.inTangent, k1.outTangent);
-                atmosphereCurve.Add(maxP, minIsp);
+                atmosphereCurve = new HermiteCurve();
+                atmosphereCurve.AddKey(k0.time, k0.value, k0.inTangent, k0.outTangent);
+                atmosphereCurve.AddKey(k1.time, k1.value, k1.inTangent, k1.outTangent);
+                atmosphereCurve.AddKey(maxP, minIsp);
             }
         }
 
@@ -168,7 +165,7 @@ namespace RealFuels
             M0 = mach;
 
             // Calculate Isp (before the shutdown check, so it displays even then)
-            float pressureAtm = (float)(p0 * 0.001d * PhysicsGlobals.KpaToAtmospheres);
+            double pressureAtm = p0 * 0.001d * PhysicsGlobals.KpaToAtmospheres;
             Isp = atmosphereCurve.Evaluate(pressureAtm) * ispMult;
 
             // if we're not combusting, don't combust and start cooling off
@@ -265,11 +262,11 @@ namespace RealFuels
 
                 double ispOtherMult = 1d;
                 if (atmCurveIsp != null)
-                    ispOtherMult *= atmCurveIsp.Evaluate((float)(rho * (1d / 1.225d)));
+                    ispOtherMult *= atmCurveIsp.Evaluate(rho * (1d / 1.225d));
                 if (velCurveIsp != null)
-                    ispOtherMult *= velCurveIsp.Evaluate((float)mach);
+                    ispOtherMult *= velCurveIsp.Evaluate(mach);
                 if (throttleIspCurve != null)
-                    ispOtherMult *= Mathf.Lerp(1f, throttleIspCurve.Evaluate((float)commandedThrottle),
+                    ispOtherMult *= UtilMath.Lerp(1f, throttleIspCurve.Evaluate(commandedThrottle),
                         throttleIspCurveAtmStrength.Evaluate(pressureAtm));
 
                 if (HighLogic.LoadedSceneIsFlight && varyIsp > 0d && fuelFlow > 0d)
@@ -322,10 +319,10 @@ namespace RealFuels
         {
             double flowMult = 1d;
             if (atmCurve != null)
-                flowMult *= atmCurve.Evaluate((float)(rho * (1d / 1.225d)));
+                flowMult *= atmCurve.Evaluate((rho * (1d / 1.225d)));
 
             if (velCurve != null)
-                flowMult *= velCurve.Evaluate((float)mach);
+                flowMult *= velCurve.Evaluate(mach);
 
             if (flowMult > flowMultCap)
             {

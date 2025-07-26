@@ -34,4 +34,4 @@ using System.Runtime.CompilerServices;
 //[assembly: AssemblyDelaySign(false)]
 //[assembly: AssemblyKeyFile("")]
 [assembly: KSPAssemblyDependency("SolverEngines", 3, 13)]
-[assembly: KSPAssemblyDependency("ROUtils", 1, 0, 1)]
+[assembly: KSPAssemblyDependency("ROUtils", 1, 1, 0)]
